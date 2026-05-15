@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLUR — Motion Filter Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111111;
+    --border: #222222;
+    --accent: #e8ff47;
+    --accent2: #ff4747;
+    --text: #f0f0f0;
+    --muted: #555;
+    --panel: #161616;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.5;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    padding: 28px 40px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  header h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 52px;
+    letter-spacing: 4px;
+    color: var(--accent);
+    line-height: 1;
+  }
+
+  header span {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .workspace {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 0;
+  }
+
+  /* ── Canvas area ── */
+  .canvas-area {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    min-height: 540px;
+    position: relative;
+    background:
+      linear-gradient(rgba(232,255,71,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232,255,71,0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .drop-zone {
+    width: 100%;
+    max-width: 700px;
+    height: 420px;
+    border: 2px dashed var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(232,255,71,0.03);
+  }
+
+  .drop-zone .drop-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.3;
+  }
+
+  .drop-zone .drop-text {
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .drop-zone .drop-sub {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 8px;
+    opacity: 0.6;
+  }
+
+  #fileInput { display: none; }
+
+  /* Canvas wrapper */
+  .canvas-wrapper {
+    display: none;
+    position: relative;
+    max-width: 700px;
+    width: 100%;
+  }
+
+  .canvas-wrapper.visible { display: block; }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 500px;
+    object-fit: contain;
+  }
+
+  /* ── Controls Panel ── */
+  .controls {
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    padding: 32px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  .control-section {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .section-label {
+    font-size: 9px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+
+  /* Direction picker */
+  .direction-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+
+  .dir-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 16px;
+    padding: 10px 0;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dir-btn:hover { border-color: var(--accent); color: var(--text); }
+  .dir-btn.active { background: var(--accent); border-color: var(--accent); color: #000; }
+
+  /* Slider */
+  .slider-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .slider-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .slider-name {
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--text);
+  }
+
+  .slider-value {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    color: var(--accent);
+    line-height: 1;
+  }
+
+  .slider-unit {
+    font-size: 10px;
+    color: var(--muted);
+    margin-left: 3px;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 3px;
+    background: var(--border);
+    outline: none;
+    border-radius: 0;
+    cursor: pointer;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--accent);
+    cursor: pointer;
+    border-radius: 0;
+    border: none;
+    transform: rotate(45deg);
+    transition: transform 0.15s;
+  }
+
+  input[type=range]::-webkit-slider-thumb:hover {
+    transform: rotate(45deg) scale(1.2);
+  }
+
+  input[type=range]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--accent);
+    cursor: pointer;
+    border-radius: 0;
+    border: none;
+  }
+
+  /* Toggle row */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+  }
+
+  .toggle {
+    width: 36px;
+    height: 18px;
+    background: var(--border);
+    border-radius: 0;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: 1px solid var(--muted);
+    flex-shrink: 0;
+  }
+
+  .toggle.on { background: var(--accent); border-color: var(--accent); }
+
+  .toggle::after {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: #000;
+    top: 3px;
+    left: 3px;
+    transition: transform 0.2s;
+  }
+
+  .toggle.on::after { transform: translateX(18px); }
+
+  /* Buttons */
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing: 3px;
+    padding: 14px 20px;
+    cursor: pointer;
+    width: 100%;
+    transition: all 0.15s;
+  }
+
+  .btn-primary:hover { background: #fff; }
+  .btn-primary:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 10px 20px;
+    cursor: pointer;
+    width: 100%;
+    transition: all 0.15s;
+  }
+
+  .btn-secondary:hover { border-color: var(--text); }
+
+  /* Status bar */
+  .status-bar {
+    padding: 10px 40px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 32px;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 1.5px;
+  }
+
+  .status-item span { color: var(--text); }
+
+  /* Processing overlay */
+  .processing-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(10,10,10,0.85);
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+    z-index: 10;
+  }
+
+  .processing-overlay.show { display: flex; }
+
+  .spinner {
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .processing-text {
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  /* Comparison slider hint */
+  .hint {
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+    margin-top: 8px;
+  }
+
+  @media (max-width: 768px) {
+    .workspace { grid-template-columns: 1fr; }
+    .controls { border-left: none; border-top: 1px solid var(--border); }
+    header { padding: 20px; }
+    header h1 { font-size: 36px; }
+    .canvas-area { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>BLUR</h1>
+  <span>Motion Filter Studio</span>
+</header>
+
+<div class="workspace">
+
+  <!-- Canvas area -->
+  <div class="canvas-area">
+    <div class="drop-zone" id="dropZone">
+      <div class="drop-icon">⊹</div>
+      <div class="drop-text">Drop image here</div>
+      <div class="drop-sub">or click to browse · PNG, JPG, WEBP, GIF</div>
+    </div>
+    <input type="file" id="fileInput" accept="image/*">
+
+    <div class="canvas-wrapper" id="canvasWrapper">
+      <canvas id="outputCanvas"></canvas>
+      <div class="processing-overlay" id="processingOverlay">
+        <div class="spinner"></div>
+        <div class="processing-text">Rendering blur…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+
+    <div class="control-section">
+      <div class="section-label">Direction</div>
+      <div class="direction-grid">
+        <button class="dir-btn active" data-angle="0" title="Horizontal">→</button>
+        <button class="dir-btn" data-angle="90" title="Vertical">↓</button>
+        <button class="dir-btn" data-angle="45" title="Diagonal ↘">↘</button>
+        <button class="dir-btn" data-angle="135" title="Diagonal ↙">↙</button>
+      </div>
+    </div>
+
+    <div class="control-section">
+      <div class="section-label">Intensity</div>
+      <div class="slider-container">
+        <div class="slider-header">
+          <span class="slider-name">Blur Amount</span>
+          <span>
+            <span class="slider-value" id="blurVal">20</span>
+            <span class="slider-unit">px</span>
+          </span>
+        </div>
+        <input type="range" id="blurSlider" min="0" max="120" value="20" step="1">
+      </div>
+    </div>
+
+    <div class="control-section">
+      <div class="section-label">Options</div>
+
+      <div class="slider-container">
+        <div class="slider-header">
+          <span class="slider-name">Opacity</span>
+          <span>
+            <span class="slider-value" id="opacityVal">100</span>
+            <span class="slider-unit">%</span>
+          </span>
+        </div>
+        <input type="range" id="opacitySlider" min="0" max="100" value="100" step="1">
+      </div>
+
+      <div class="toggle-row">
+        <span>Live preview</span>
+        <div class="toggle on" id="liveToggle"></div>
+      </div>
+
+      <div class="toggle-row">
+        <span>Preserve original layer</span>
+        <div class="toggle" id="layerToggle"></div>
+      </div>
+    </div>
+
+    <div class="control-section" style="margin-top:auto; gap:10px;">
+      <button class="btn-primary" id="applyBtn" disabled>APPLY BLUR</button>
+      <button class="btn-secondary" id="downloadBtn" disabled>↓ Download Result</button>
+      <button class="btn-secondary" id="resetBtn">Reset Image</button>
+    </div>
+
+  </div>
+</div>
+
+<div class="status-bar">
+  <div class="status-item">FILE <span id="statFile">—</span></div>
+  <div class="status-item">SIZE <span id="statSize">—</span></div>
+  <div class="status-item">BLUR <span id="statBlur">0px / 0°</span></div>
+</div>
+
+<script>
+  // ── State ──
+  const state = {
+    originalImage: null,
+    imageWidth: 0,
+    imageHeight: 0,
+    angle: 0,
+    blur: 20,
+    opacity: 1,
+    livePreview: true,
+    preserveLayer: false,
+    renderPending: false,
+  };
+
+  // ── Elements ──
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const canvasWrapper = document.getElementById('canvasWrapper');
+  const outputCanvas = document.getElementById('outputCanvas');
+  const ctx = outputCanvas.getContext('2d');
+  const blurSlider = document.getElementById('blurSlider');
+  const blurVal = document.getElementById('blurVal');
+  const opacitySlider = document.getElementById('opacitySlider');
+  const opacityVal = document.getElementById('opacityVal');
+  const applyBtn = document.getElementById('applyBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const liveToggle = document.getElementById('liveToggle');
+  const layerToggle = document.getElementById('layerToggle');
+  const processingOverlay = document.getElementById('processingOverlay');
+  const dirBtns = document.querySelectorAll('.dir-btn');
+  const statFile = document.getElementById('statFile');
+  const statSize = document.getElementById('statSize');
+  const statBlur = document.getElementById('statBlur');
+
+  // ── File loading ──
+  dropZone.addEventListener('click', () => fileInput.click());
+
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) loadImage(file);
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) loadImage(fileInput.files[0]);
+  });
+
+  function loadImage(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        state.originalImage = img;
+        state.imageWidth = img.naturalWidth;
+        state.imageHeight = img.naturalHeight;
+
+        outputCanvas.width = img.naturalWidth;
+        outputCanvas.height = img.naturalHeight;
+
+        dropZone.style.display = 'none';
+        canvasWrapper.classList.add('visible');
+        applyBtn.disabled = false;
+
+        statFile.textContent = file.name.length > 20 ? file.name.slice(0,17) + '…' : file.name;
+        statSize.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+
+        renderBlur();
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ── Direction buttons ──
+  dirBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      dirBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.angle = parseInt(btn.dataset.angle);
+      updateStatus();
+      if (state.livePreview && state.originalImage) scheduleRender();
+    });
+  });
+
+  // ── Sliders ──
+  blurSlider.addEventListener('input', () => {
+    state.blur = parseInt(blurSlider.value);
+    blurVal.textContent = state.blur;
+    updateStatus();
+    if (state.livePreview && state.originalImage) scheduleRender();
+  });
+
+  opacitySlider.addEventListener('input', () => {
+    state.opacity = parseInt(opacitySlider.value) / 100;
+    opacityVal.textContent = opacitySlider.value;
+    if (state.livePreview && state.originalImage) scheduleRender();
+  });
+
+  // ── Toggles ──
+  liveToggle.addEventListener('click', () => {
+    state.livePreview = !state.livePreview;
+    liveToggle.classList.toggle('on', state.livePreview);
+  });
+
+  layerToggle.addEventListener('click', () => {
+    state.preserveLayer = !state.preserveLayer;
+    layerToggle.classList.toggle('on', state.preserveLayer);
+    if (state.livePreview && state.originalImage) scheduleRender();
+  });
+
+  // ── Apply button ──
+  applyBtn.addEventListener('click', () => {
+    renderBlur(true);
+  });
+
+  // ── Download ──
+  downloadBtn.addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'motion-blur-result.png';
+    link.href = outputCanvas.toDataURL('image/png');
+    link.click();
+  });
+
+  // ── Reset ──
+  resetBtn.addEventListener('click', () => {
+    if (state.originalImage) {
+      ctx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+      ctx.drawImage(state.originalImage, 0, 0);
+    } else {
+      // Full reset
+      dropZone.style.display = '';
+      canvasWrapper.classList.remove('visible');
+      applyBtn.disabled = true;
+      downloadBtn.disabled = true;
+      statFile.textContent = '—';
+      statSize.textContent = '—';
+      statBlur.textContent = '0px / 0°';
+      fileInput.value = '';
+      state.originalImage = null;
+    }
+  });
+
+  function updateStatus() {
+    statBlur.textContent = `${state.blur}px / ${state.angle}°`;
+  }
+
+  // ── Render scheduling ──
+  let renderTimer = null;
+  function scheduleRender() {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(() => renderBlur(), 80);
+  }
+
+  // ── Core motion blur renderer ──
+  async function renderBlur(fromButton = false) {
+    if (!state.originalImage) return;
+
+    if (fromButton) {
+      processingOverlay.classList.add('show');
+      await new Promise(r => setTimeout(r, 20)); // allow repaint
+    }
+
+    const w = state.imageWidth;
+    const h = state.imageHeight;
+
+    // Offscreen canvas for source
+    const src = document.createElement('canvas');
+    src.width = w; src.height = h;
+    const sctx = src.getContext('2d');
+    sctx.drawImage(state.originalImage, 0, 0);
+
+    // Result canvas
+    const dst = document.createElement('canvas');
+    dst.width = w; dst.height = h;
+    const dctx = dst.getContext('2d');
+
+    const amount = state.blur;
+
+    if (amount === 0) {
+      // No blur, just draw
+      dctx.drawImage(src, 0, 0);
+    } else {
+      // Build motion blur via CSS filter on an offscreen canvas
+      // We achieve directional motion blur by rotating, applying horizontal blur, rotating back
+      const rad = (state.angle * Math.PI) / 180;
+
+      // Use stacked translucent frames technique for real motion blur
+      const steps = Math.max(8, Math.min(30, amount));
+      const dx = Math.cos(rad) * amount;
+      const dy = Math.sin(rad) * amount;
+      const stepAlpha = 1 / steps;
+
+      dctx.clearRect(0, 0, w, h);
+
+      for (let i = 0; i < steps; i++) {
+        const t = (i / (steps - 1)) - 0.5; // -0.5 to 0.5
+        const ox = dx * t;
+        const oy = dy * t;
+        dctx.globalAlpha = stepAlpha;
+        dctx.drawImage(src, ox, oy);
+      }
+      dctx.globalAlpha = 1;
+    }
+
+    // Now draw to output canvas
+    ctx.clearRect(0, 0, w, h);
+
+    if (state.preserveLayer) {
+      // Original beneath
+      ctx.globalAlpha = 1;
+      ctx.drawImage(state.originalImage, 0, 0);
+      ctx.globalAlpha = state.opacity;
+      ctx.drawImage(dst, 0, 0);
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.globalAlpha = state.opacity;
+      ctx.drawImage(dst, 0, 0);
+      ctx.globalAlpha = 1;
+    }
+
+    if (fromButton) {
+      processingOverlay.classList.remove('show');
+    }
+
+    downloadBtn.disabled = false;
+    updateStatus();
+  }
+</script>
+</body>
+</html>
