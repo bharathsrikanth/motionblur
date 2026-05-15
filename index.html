@@ -438,11 +438,11 @@
         <div class="slider-header">
           <span class="slider-name">Blur Amount</span>
           <span>
-            <span class="slider-value" id="blurVal">20</span>
-            <span class="slider-unit">px</span>
+            <span class="slider-value" id="blurVal">0</span>
+            <span class="slider-unit">%</span>
           </span>
         </div>
-        <input type="range" id="blurSlider" min="0" max="120" value="20" step="1">
+        <input type="range" id="blurSlider" min="0" max="100" value="0" step="1">
       </div>
     </div>
 
@@ -581,7 +581,7 @@
 
   // ── Sliders ──
   blurSlider.addEventListener('input', () => {
-    state.blur = parseInt(blurSlider.value);
+    state.blur = parseInt(blurSlider.value); // stored as 0–100%
     blurVal.textContent = state.blur;
     updateStatus();
     if (state.livePreview && state.originalImage) scheduleRender();
@@ -620,25 +620,35 @@
 
   // ── Reset ──
   resetBtn.addEventListener('click', () => {
+    // Reset all controls to defaults
+    state.blur = 0;
+    state.opacity = 1;
+    state.angle = 0;
+
+    blurSlider.value = 0;
+    blurVal.textContent = 0;
+    opacitySlider.value = 100;
+    opacityVal.textContent = 100;
+
+    dirBtns.forEach(b => b.classList.remove('active'));
+    document.querySelector('.dir-btn[data-angle="0"]').classList.add('active');
+
     if (state.originalImage) {
-      ctx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
-      ctx.drawImage(state.originalImage, 0, 0);
+      renderBlur();
     } else {
-      // Full reset
       dropZone.style.display = '';
       canvasWrapper.classList.remove('visible');
       applyBtn.disabled = true;
       downloadBtn.disabled = true;
       statFile.textContent = '—';
       statSize.textContent = '—';
-      statBlur.textContent = '0px / 0°';
       fileInput.value = '';
-      state.originalImage = null;
     }
+    updateStatus();
   });
 
   function updateStatus() {
-    statBlur.textContent = `${state.blur}px / ${state.angle}°`;
+    statBlur.textContent = `${state.blur}% / ${state.angle}°`;
   }
 
   // ── Render scheduling ──
@@ -671,23 +681,23 @@
     dst.width = w; dst.height = h;
     const dctx = dst.getContext('2d');
 
-    const amount = state.blur;
+    // Convert blur % to px based on image diagonal so it scales with image size
+    const diagonal = Math.sqrt(w * w + h * h);
+    const amount = Math.round((state.blur / 100) * diagonal * 0.3);
 
     if (amount === 0) {
-      // No blur, just draw
       dctx.drawImage(src, 0, 0);
     } else {
-      // Build motion blur via CSS filter on an offscreen canvas
-      // We achieve directional motion blur by rotating, applying horizontal blur, rotating back
       const rad = (state.angle * Math.PI) / 180;
-
-      // Use stacked translucent frames technique for real motion blur
       const steps = Math.max(8, Math.min(30, amount));
       const dx = Math.cos(rad) * amount;
       const dy = Math.sin(rad) * amount;
       const stepAlpha = 1 / steps;
 
-      dctx.clearRect(0, 0, w, h);
+      // Always start with the original image as a fully-opaque base so
+      // edge pixels never become transparent and bleed into the background.
+      dctx.drawImage(src, 0, 0);
+      dctx.globalCompositeOperation = 'source-over';
 
       for (let i = 0; i < steps; i++) {
         const t = (i / (steps - 1)) - 0.5; // -0.5 to 0.5
@@ -702,18 +712,14 @@
     // Now draw to output canvas
     ctx.clearRect(0, 0, w, h);
 
-    if (state.preserveLayer) {
-      // Original beneath
-      ctx.globalAlpha = 1;
-      ctx.drawImage(state.originalImage, 0, 0);
-      ctx.globalAlpha = state.opacity;
-      ctx.drawImage(dst, 0, 0);
-      ctx.globalAlpha = 1;
-    } else {
-      ctx.globalAlpha = state.opacity;
-      ctx.drawImage(dst, 0, 0);
-      ctx.globalAlpha = 1;
-    }
+    // Always paint the original underneath first — this fully prevents
+    // any edge-brightness bleed regardless of opacity or preserve setting.
+    ctx.globalAlpha = 1;
+    ctx.drawImage(state.originalImage, 0, 0);
+
+    ctx.globalAlpha = state.opacity;
+    ctx.drawImage(dst, 0, 0);
+    ctx.globalAlpha = 1;
 
     if (fromButton) {
       processingOverlay.classList.remove('show');
